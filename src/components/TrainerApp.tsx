@@ -7,7 +7,7 @@ import SegmentedControl from "./SegmentedControl";
 
 type Mode = "piano-name" | "name-piano" | "staff-name" | "staff-piano";
 type Naming = "letters" | "solfege";
-type AccidentalSpelling = "sharp" | "flat";
+type AccidentalSpelling = "sharp" | "flat" | "mixed";
 type Theme = "system" | "light" | "dark";
 type ClefSetting = "treble" | "bass" | "mixed";
 type Screen = "setup" | "practice" | "results";
@@ -20,12 +20,13 @@ interface Settings {
   accidentals: boolean;
   accidentalSpelling: AccidentalSpelling;
   clef: ClefSetting;
-  questionCount: number;
+  selectedPitchIds: string[];
 }
 
 interface Question {
   pitch: Pitch;
   clef: "treble" | "bass";
+  spelling: "sharp" | "flat";
 }
 
 interface Answer {
@@ -47,7 +48,7 @@ const DEFAULT_SETTINGS: Settings = {
   accidentals: false,
   accidentalSpelling: "sharp",
   clef: "treble",
-  questionCount: 7,
+  selectedPitchIds: eligiblePitches(true).map((pitch) => pitch.id),
 };
 
 const MODES: { id: Mode; icon: string; title: MessageKey; description: MessageKey }[] = [
@@ -79,7 +80,10 @@ export default function TrainerApp() {
 
   const t = (key: MessageKey, values?: Record<string, string | number>) => translate(settings.language, key, values);
   const pitches = useMemo(() => eligiblePitches(settings.accidentals), [settings.accidentals]);
-  const maxQuestions = pitches.length;
+  const selectedPitches = useMemo(
+    () => pitches.filter((pitch) => settings.selectedPitchIds.includes(pitch.id)),
+    [pitches, settings.selectedPitchIds],
+  );
   const current = questions[index];
   const isStaffMode = settings.mode.startsWith("staff");
 
@@ -119,13 +123,7 @@ export default function TrainerApp() {
   };
 
   const toggleAccidentals = () => {
-    const next = !settings.accidentals;
-    const nextMax = next ? 12 : 7;
-    setSettings((previous) => ({
-      ...previous,
-      accidentals: next,
-      questionCount: Math.min(previous.questionCount, nextMax),
-    }));
+    update("accidentals", !settings.accidentals);
   };
 
   const makeClef = (): "treble" | "bass" => {
@@ -133,15 +131,27 @@ export default function TrainerApp() {
     return settings.clef;
   };
 
+  const makeSpelling = (): "sharp" | "flat" => {
+    if (settings.accidentalSpelling === "mixed") return Math.random() < 0.5 ? "sharp" : "flat";
+    return settings.accidentalSpelling;
+  };
+
+  const makeRound = (lastPitchId?: string): Question[] => {
+    const round = shuffled(selectedPitches);
+    if (round.length > 1 && round[0].id === lastPitchId) {
+      [round[0], round[1]] = [round[1], round[0]];
+    }
+    return round.map((pitch) => ({ pitch, clef: makeClef(), spelling: makeSpelling() }));
+  };
+
   const startSession = () => {
-    const sessionQuestions = shuffled(pitches)
-      .slice(0, settings.questionCount)
-      .map((pitch) => ({ pitch, clef: makeClef() }));
+    if (selectedPitches.length === 0) return;
+    const sessionQuestions = makeRound();
     setQuestions(sessionQuestions);
     setAnswers([]);
     setIndex(0);
     setSelected(null);
-    setScreen(sessionQuestions.length === 0 ? "results" : "practice");
+    setScreen("practice");
   };
 
   const answer = (pitch: Pitch) => {
@@ -154,14 +164,41 @@ export default function TrainerApp() {
 
   const advance = () => {
     if (index >= questions.length - 1) {
-      setScreen("results");
+      setQuestions(makeRound(current.pitch.id));
+      setIndex(0);
+      setSelected(null);
       return;
     }
     setIndex((value) => value + 1);
     setSelected(null);
   };
 
-  const labelFor = (pitch: Pitch) => formatPitch(pitch, settings.naming, settings.accidentalSpelling);
+  const labelFor = (pitch: Pitch, spelling: "sharp" | "flat" = current?.spelling ?? "sharp") =>
+    formatPitch(pitch, settings.naming, spelling);
+  const selectionLabelFor = (pitch: Pitch) => {
+    if (pitch.accidental === "sharp" && settings.accidentalSpelling === "mixed") {
+      return `${formatPitch(pitch, settings.naming, "sharp")} / ${formatPitch(pitch, settings.naming, "flat")}`;
+    }
+    const spelling = settings.accidentalSpelling === "mixed" ? "sharp" : settings.accidentalSpelling;
+    return formatPitch(pitch, settings.naming, spelling);
+  };
+  const togglePitch = (pitchId: string) => {
+    setSettings((previous) => ({
+      ...previous,
+      selectedPitchIds: previous.selectedPitchIds.includes(pitchId)
+        ? previous.selectedPitchIds.filter((id) => id !== pitchId)
+        : [...previous.selectedPitchIds, pitchId],
+    }));
+  };
+  const setAllVisiblePitches = (selected: boolean) => {
+    const visibleIds = pitches.map((pitch) => pitch.id);
+    setSettings((previous) => ({
+      ...previous,
+      selectedPitchIds: selected
+        ? [...new Set([...previous.selectedPitchIds, ...visibleIds])]
+        : previous.selectedPitchIds.filter((id) => !visibleIds.includes(id)),
+    }));
+  };
   const correctCount = answers.filter((item) => item.correct).length;
   const promptKey: Record<Mode, MessageKey> = {
     "piano-name": "chooseName",
@@ -260,9 +297,9 @@ export default function TrainerApp() {
                 <SegmentedControl
                   label={t("spelling")}
                   value={settings.accidentalSpelling}
-                  options={(["sharp", "flat"] as AccidentalSpelling[]).map((value) => ({
+                  options={(["sharp", "flat", "mixed"] as AccidentalSpelling[]).map((value) => ({
                     value,
-                    label: t(value === "sharp" ? "sharps" : "flats"),
+                    label: t(value === "sharp" ? "sharps" : value === "flat" ? "flats" : "mixed"),
                   }))}
                   onChange={(value) => update("accidentalSpelling", value)}
                   disabled={!settings.accidentals}
@@ -280,27 +317,36 @@ export default function TrainerApp() {
                     onClick={toggleAccidentals}
                   ><span /></button>
                 </div>
-                <div class="setting-field question-field">
-                  <div class="question-label">
+                <div class="setting-field note-picker-field">
+                  <div class="note-picker-heading">
                     <div>
-                      <span class="field-label">{t("questions")}</span>
-                      <small>{t("questionsHelp", { max: maxQuestions })}</small>
+                      <span class="field-label">{t("notesToPractice")}</span>
+                      <small>{t("notesHelp")}</small>
                     </div>
-                    <output>{settings.questionCount}</output>
+                    <span class="selection-count">{t("selectedCount", { count: selectedPitches.length })}</span>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max={maxQuestions}
-                    value={Math.min(settings.questionCount, maxQuestions)}
-                    aria-label={t("questions")}
-                    onInput={(event) => update("questionCount", Number(event.currentTarget.value))}
-                  />
-                  <div class="range-labels"><span>0</span><span>{maxQuestions}</span></div>
+                  <div class="note-picker-actions">
+                    <button type="button" onClick={() => setAllVisiblePitches(true)}>{t("selectAll")}</button>
+                    <button type="button" onClick={() => setAllVisiblePitches(false)}>{t("clearAll")}</button>
+                  </div>
+                  <div class="note-picker-grid">
+                    {pitches.map((pitch) => {
+                      const isSelected = settings.selectedPitchIds.includes(pitch.id);
+                      return (
+                        <button
+                          type="button"
+                          class={isSelected ? "is-selected" : ""}
+                          aria-pressed={isSelected}
+                          onClick={() => togglePitch(pitch.id)}
+                        >{selectionLabelFor(pitch)}</button>
+                      );
+                    })}
+                  </div>
+                  {selectedPitches.length === 0 && <p class="selection-error">{t("selectOne")}</p>}
                 </div>
               </div>
 
-              <button class="primary-button" type="button" onClick={startSession}>
+              <button class="primary-button" type="button" onClick={startSession} disabled={selectedPitches.length === 0}>
                 {t("start")} <span aria-hidden="true">→</span>
               </button>
             </section>
@@ -319,22 +365,24 @@ export default function TrainerApp() {
           <section class="practice-page">
             <div class="practice-topline">
               <button class="text-button" type="button" onClick={() => setScreen("setup")}>← {t("home")}</button>
-              <span>{t("progress", { current: index + 1, total: questions.length })}</span>
+              <div class="practice-status">
+                <span>{t("progress", { current: answers.length + 1 })}</span>
+                {answers.length > 0 && <button class="text-button" type="button" onClick={() => setScreen("results")}>{t("finishSession")}</button>}
+              </div>
             </div>
-            <div class="progress-track"><span style={{ width: `${((index + 1) / questions.length) * 100}%` }} /></div>
             <div class="question-card">
               <p class="eyebrow">{t(promptKey[settings.mode])}</p>
               <div class="prompt-area">
                 {settings.mode === "piano-name" && (
                   <PianoKeyboard pitches={eligiblePitches(true)} highlightedId={current.pitch.id} labelFor={labelFor} />
                 )}
-                {settings.mode === "name-piano" && <div class="written-note">{labelFor(current.pitch)}</div>}
+                {settings.mode === "name-piano" && <div class="written-note">{labelFor(current.pitch, current.spelling)}</div>}
                 {isStaffMode && (
                   <StaffNote
                     pitch={current.pitch}
                     clef={current.clef}
-                    spelling={settings.accidentalSpelling}
-                    accessibleLabel={`${labelFor(current.pitch)}, ${t(current.clef)}`}
+                    spelling={current.spelling}
+                    accessibleLabel={`${labelFor(current.pitch, current.spelling)}, ${t(current.clef)}`}
                   />
                 )}
               </div>
@@ -347,7 +395,7 @@ export default function TrainerApp() {
                       disabled={Boolean(selected)}
                       class={`${selected?.id === pitch.id ? "is-selected" : ""} ${selected && current.pitch.id === pitch.id ? "is-correct" : ""} ${selected?.id === pitch.id && selected.id !== current.pitch.id ? "is-wrong" : ""}`}
                       onClick={() => answer(pitch)}
-                    >{labelFor(pitch)}</button>
+                    >{labelFor(pitch, current.spelling)}</button>
                   ))}
                 </div>
               ) : (
@@ -357,16 +405,16 @@ export default function TrainerApp() {
                   selectedId={selected?.id}
                   correctId={selected ? current.pitch.id : undefined}
                   disabled={Boolean(selected)}
-                  labelFor={labelFor}
+                  labelFor={(pitch) => labelFor(pitch, current.spelling)}
                   onSelect={answer}
                 />
               )}
 
               {selected && (
                 <div class={`feedback ${selected.id === current.pitch.id ? "is-correct" : "is-wrong"}`} role="status">
-                  <p>{selected.id === current.pitch.id ? t("correct") : t("incorrect", { note: labelFor(current.pitch) })}</p>
+                  <p>{selected.id === current.pitch.id ? t("correct") : t("incorrect", { note: labelFor(current.pitch, current.spelling) })}</p>
                   <button class="primary-button" type="button" onClick={advance}>
-                    {index === questions.length - 1 ? t("finish") : t("next")} <span aria-hidden="true">→</span>
+                    {t("next")} <span aria-hidden="true">→</span>
                   </button>
                 </div>
               )}
@@ -376,16 +424,13 @@ export default function TrainerApp() {
 
         {screen === "results" && (
           <section class="results-page">
-            <div class="result-mark" aria-hidden="true">{questions.length === 0 ? "○" : "✓"}</div>
+            <div class="result-mark" aria-hidden="true">✓</div>
             <p class="eyebrow">{t("results")}</p>
-            <h1>{questions.length === 0 ? t("emptyTitle") : t("score", { correct: correctCount, total: questions.length })}</h1>
-            {questions.length === 0 && <p>{t("emptyBody")}</p>}
-            {questions.length > 0 && (
-              <div class="result-score">
-                <strong>{Math.round((correctCount / questions.length) * 100)}%</strong>
-                <span>{t("accuracy", { value: Math.round((correctCount / questions.length) * 100) })}</span>
-              </div>
-            )}
+            <h1>{t("score", { correct: correctCount, total: answers.length })}</h1>
+            <div class="result-score">
+              <strong>{Math.round((correctCount / answers.length) * 100)}%</strong>
+              <span>{t("accuracy", { value: Math.round((correctCount / answers.length) * 100) })}</span>
+            </div>
             <div class="result-actions">
               <button class="primary-button" type="button" onClick={startSession}>{t("again")} <span>→</span></button>
               <button class="secondary-button" type="button" onClick={() => setScreen("setup")}>{t("home")}</button>

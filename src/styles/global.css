@@ -179,12 +179,16 @@ main { padding: 10px 20px 64px; }
 .switch span { background: var(--surface-strong); border-radius: 50%; box-shadow: 0 1px 4px rgb(0 0 0 / 18%); display: block; height: 22px; transition: transform 150ms; width: 22px; }
 .switch.is-on { background: var(--accent); border-color: var(--accent); }
 .switch.is-on span { transform: translateX(20px); }
-.question-field { border-top: 1px solid var(--line); padding-top: 22px; }
-.question-label { align-items: flex-start; display: flex; justify-content: space-between; }
-.question-label .field-label { margin-bottom: 4px; }
-.question-label output { color: var(--accent); font-family: Georgia, serif; font-size: 2.4rem; line-height: 1; }
-input[type="range"] { accent-color: var(--accent); cursor: pointer; margin-top: 20px; width: 100%; }
-.range-labels { color: var(--ink-soft); display: flex; font-size: .7rem; justify-content: space-between; }
+.note-picker-field { border-top: 1px solid var(--line); padding-top: 22px; }
+.note-picker-heading { align-items: flex-start; display: flex; gap: 20px; justify-content: space-between; }
+.note-picker-heading .field-label { margin-bottom: 4px; }
+.selection-count { color: var(--accent); flex-shrink: 0; font-size: .76rem; font-weight: 800; }
+.note-picker-actions { display: flex; gap: 8px; margin: 16px 0 10px; }
+.note-picker-actions button { background: transparent; border: 0; color: var(--accent); cursor: pointer; font-size: .76rem; font-weight: 800; min-height: 36px; padding: 0 5px; }
+.note-picker-grid { display: grid; gap: 8px; grid-template-columns: repeat(4, 1fr); }
+.note-picker-grid button { background: var(--surface-muted); border: 1px solid transparent; border-radius: 9px; cursor: pointer; font-family: Georgia, serif; font-size: .9rem; min-height: 46px; padding: 6px 3px; }
+.note-picker-grid button.is-selected { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); font-weight: 700; }
+.selection-error { color: var(--error); font-size: .76rem; margin: 10px 0 0; }
 .primary-button, .secondary-button {
   align-items: center;
   border-radius: 12px;
@@ -199,6 +203,7 @@ input[type="range"] { accent-color: var(--accent); cursor: pointer; margin-top: 
 }
 .primary-button { background: var(--accent); border: 1px solid var(--accent); color: #fffaf1; }
 .primary-button:hover { background: var(--accent-deep); }
+.primary-button:disabled { cursor: not-allowed; opacity: .45; }
 .settings-card > .primary-button { margin-top: 28px; width: 100%; }
 .secondary-button { background: transparent; border: 1px solid var(--line); justify-content: center; }
 .stats-strip { border-bottom: 1px solid var(--line); color: var(--ink-soft); display: flex; flex-wrap: wrap; font-size: .76rem; gap: 14px 24px; margin-top: 28px; padding: 18px 4px; }
@@ -206,6 +211,8 @@ input[type="range"] { accent-color: var(--accent); cursor: pointer; margin-top: 
 
 .practice-page { max-width: 780px; padding-top: 28px; }
 .practice-topline { align-items: center; color: var(--ink-soft); display: flex; font-size: .76rem; justify-content: space-between; }
+.practice-status { align-items: center; display: flex; gap: 14px; }
+.practice-status .text-button { color: var(--accent); font-weight: 800; }
 .text-button { background: transparent; border: 0; color: var(--ink-soft); cursor: pointer; min-height: 44px; padding: 4px 0; }
 .progress-track { background: var(--surface-muted); border-radius: 99px; height: 4px; overflow: hidden; }
 .progress-track span { background: var(--accent); display: block; height: 100%; transition: width 200ms ease; }
@@ -258,7 +265,8 @@ input[type="range"] { accent-color: var(--accent); cursor: pointer; margin-top: 
   .mode-grid { grid-template-columns: 1fr 1fr; }
   .settings-card { padding: 34px; }
   .settings-grid { grid-template-columns: 1fr 1fr; }
-  .question-field { grid-column: 1 / -1; }
+  .note-picker-field { grid-column: 1 / -1; }
+  .note-picker-grid { grid-template-columns: repeat(6, 1fr); }
   .settings-card > .primary-button { margin-left: auto; max-width: 280px; }
   .answer-grid { grid-template-columns: repeat(6, 1fr); }
   .result-actions { grid-template-columns: 1fr 1fr; width: 440px; }
